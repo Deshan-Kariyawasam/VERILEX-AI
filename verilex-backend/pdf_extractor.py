@@ -7,6 +7,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# /tmp on Linux/PythonAnywhere; system temp dir on Windows
+_TMP_DIR = "/tmp" if os.path.isdir("/tmp") else tempfile.gettempdir()
+
 _DOWNLOAD_TIMEOUT = 60  # seconds
 _MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
 
@@ -37,7 +40,7 @@ def download_and_extract_pdf(pdf_url: str) -> dict:
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(
-            suffix=".pdf", delete=False, dir="/tmp"
+            suffix=".pdf", delete=False, dir=_TMP_DIR
         ) as tmp_file:
             tmp_path = tmp_file.name
             bytes_written = 0

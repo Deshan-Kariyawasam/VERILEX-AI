@@ -170,7 +170,7 @@ DOCUMENT TEXT:
 {text[:60000]}"""
 
         logger.info("Calling Claude for document structure extraction (%d chars)", len(text))
-        raw = self._call_claude(prompt, max_tokens=8192)
+        raw = self._call_claude(prompt)
         return _parse_json_response(raw)
 
     def analyze_document(self, text: str, page_count: int, job_id: str) -> dict:
@@ -253,5 +253,5 @@ DOCUMENT TEXT:
             len(text),
             job_id,
         )
-        raw = self._call_claude(prompt, max_tokens=8192)
+        raw = self._call_claude(prompt)
         return _parse_json_response(raw)
