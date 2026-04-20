@@ -8,9 +8,9 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
-# ── Verilex system prompt ─────────────────────────────────────────────────────
+# ── Valorex system prompt ─────────────────────────────────────────────────────
 
-VERILEX_SYSTEM_PROMPT = """You are Verilex, an elite AI legal analyst specialising in the comprehensive review \
+VALOREX_SYSTEM_PROMPT = """You are Valorex, an elite AI legal analyst specialising in the comprehensive review \
 and auditing of legal documents including franchise agreements, commercial leases, employment contracts, \
 service agreements, partnership agreements, terms and conditions, NDAs, shareholder agreements, and all \
 forms of commercial and civil legal documentation.
@@ -104,33 +104,55 @@ def _parse_json_response(text: str) -> Any:
     )
 
 
+# ── Token cost helper (claude-opus-4-7 pricing) ───────────────────────────────
+_PRICE_PER_M = {
+    "input":       15.00,
+    "output":      75.00,
+    "cache_write": 18.75,
+    "cache_read":   1.50,
+}
+
+def _calc_cost(usage: dict) -> float:
+    return round(
+        usage.get("input_tokens", 0)                  * _PRICE_PER_M["input"]       / 1_000_000
+        + usage.get("output_tokens", 0)               * _PRICE_PER_M["output"]      / 1_000_000
+        + usage.get("cache_creation_input_tokens", 0) * _PRICE_PER_M["cache_write"] / 1_000_000
+        + usage.get("cache_read_input_tokens", 0)     * _PRICE_PER_M["cache_read"]  / 1_000_000,
+        6,
+    )
+
+
 # ── client ────────────────────────────────────────────────────────────────────
 
-class VerilexClient:
+class ValorexClient:
     def __init__(self):
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise EnvironmentError("ANTHROPIC_API_KEY environment variable is not set.")
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
-        self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "8192"))
+        self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "16000"))
 
-    def _call_claude(self, user_message: str, max_tokens: int | None = None) -> str:
+    def _call_claude(self, user_message: str, max_tokens: int | None = None) -> tuple[str, dict]:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens or self.max_tokens,
             system=[
                 {
                     "type": "text",
-                    "text": VERILEX_SYSTEM_PROMPT,
-                    # Cache the large system prompt to reduce latency and cost on
-                    # repeated calls (5-minute TTL per Anthropic's prompt caching).
+                    "text": VALOREX_SYSTEM_PROMPT,
                     "cache_control": {"type": "ephemeral"},
                 }
             ],
             messages=[{"role": "user", "content": user_message}],
         )
-        return response.content[0].text
+        usage = {
+            "input_tokens":                response.usage.input_tokens,
+            "output_tokens":               response.usage.output_tokens,
+            "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
+            "cache_read_input_tokens":     getattr(response.usage, "cache_read_input_tokens", 0),
+        }
+        return response.content[0].text, usage
 
     # ── public methods ────────────────────────────────────────────────────────
 
@@ -157,7 +179,7 @@ Each element must have exactly these three fields:
 - "order": sequential integer starting from 1
 
 Rules:
-- The first element should be type "header_title" with text "CONFIDENTIAL | VERILEX AI AUDIT".
+- The first element should be type "header_title" with text "CONFIDENTIAL | VALOREX AI AUDIT".
 - The second element should be type "main_title" with the document title.
 - Major numbered headings → sub_title.
 - Sub-headings → section_label.
@@ -170,7 +192,7 @@ DOCUMENT TEXT:
 {text[:60000]}"""
 
         logger.info("Calling Claude for document structure extraction (%d chars)", len(text))
-        raw = self._call_claude(prompt)
+        raw, _ = self._call_claude(prompt)
         return _parse_json_response(raw)
 
     def analyze_document(self, text: str, page_count: int, job_id: str) -> dict:
@@ -229,7 +251,7 @@ DOCUMENT TEXT:
   }
 }"""
 
-        prompt = f"""Perform a complete Verilex AI legal audit of the document below ({page_count} pages).
+        prompt = f"""Perform a complete Valorex AI legal audit of the document below ({page_count} pages).
 
 Return ONLY valid JSON that exactly matches this schema (replace angle-bracket placeholders with real values):
 
@@ -253,5 +275,7 @@ DOCUMENT TEXT:
             len(text),
             job_id,
         )
-        raw = self._call_claude(prompt)
-        return _parse_json_response(raw)
+        raw, usage = self._call_claude(prompt)
+        result = _parse_json_response(raw)
+        result["_token_usage"] = {**usage, "estimated_cost_usd": _calc_cost(usage)}
+        return result

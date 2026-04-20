@@ -1,12 +1,15 @@
 import os
 import io
+import base64
 import logging
+import threading
 
+import requests
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 from pdf_extractor import download_and_extract_pdf
-from claude_client import VerilexClient
+from claude_client import ValorexClient
 from pdf_generator import generate_pdf_report
 
 logging.basicConfig(
@@ -23,7 +26,7 @@ CORS(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-verilex = VerilexClient()
+valorex = ValorexClient()
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -63,7 +66,7 @@ def extract_document():
 
     try:
         pdf_data = download_and_extract_pdf(pdf_url)
-        structure = verilex.extract_document_structure(
+        structure = valorex.extract_document_structure(
             pdf_data["full_text"], pdf_data["page_count"]
         )
         return jsonify(structure)
@@ -90,7 +93,7 @@ def analyze_document():
 
     try:
         pdf_data = download_and_extract_pdf(pdf_url)
-        analysis = verilex.analyze_document(
+        analysis = valorex.analyze_document(
             pdf_data["full_text"], pdf_data["page_count"], job_id
         )
         return jsonify(analysis)
@@ -104,6 +107,32 @@ def analyze_document():
         return jsonify({"error": str(exc), "job_id": job_id}), 500
 
 
+def _process_and_callback(pdf_url: str, job_id: str, webhook_url: str):
+    try:
+        pdf_data = download_and_extract_pdf(pdf_url)
+        analysis = valorex.analyze_document(
+            pdf_data["full_text"], pdf_data["page_count"], job_id
+        )
+        pdf_bytes = generate_pdf_report(analysis)
+        token_usage = analysis.pop("_token_usage", {})
+        payload = {
+            "job_id": job_id,
+            "status": "success",
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8"),
+            "filename": f"valorex-audit-{job_id}.pdf",
+            "tokens": token_usage,
+        }
+    except Exception as exc:
+        logger.exception("Background processing failed job=%s", job_id)
+        payload = {"job_id": job_id, "status": "error", "error": str(exc)}
+
+    try:
+        requests.post(webhook_url, json=payload, timeout=30)
+        logger.info("Webhook delivered job=%s", job_id)
+    except Exception as exc:
+        logger.error("Webhook delivery failed job=%s: %s", job_id, exc)
+
+
 @app.route("/generate-pdf", methods=["POST"])
 def generate_pdf():
     data, err = _require_json_body()
@@ -115,27 +144,17 @@ def generate_pdf():
     if err:
         return err
 
-    try:
-        pdf_data = download_and_extract_pdf(pdf_url)
-        analysis = verilex.analyze_document(
-            pdf_data["full_text"], pdf_data["page_count"], job_id
-        )
-        pdf_bytes = generate_pdf_report(analysis)
+    webhook_url = data.get("webhook_url", "").strip()
+    if not webhook_url:
+        return jsonify({"error": "webhook_url is required", "job_id": job_id}), 400
 
-        return send_file(
-            io.BytesIO(pdf_bytes),
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name=f"verilex-audit-{job_id}.pdf",
-        )
+    threading.Thread(
+        target=_process_and_callback,
+        args=(pdf_url, job_id, webhook_url),
+        daemon=True,
+    ).start()
 
-    except ValueError as exc:
-        logger.warning("PDF download/extract error: %s", exc)
-        return jsonify({"error": str(exc), "job_id": job_id}), 400
-
-    except Exception as exc:
-        logger.exception("Unexpected error in /generate-pdf")
-        return jsonify({"error": str(exc), "job_id": job_id}), 500
+    return jsonify({"status": "processing", "job_id": job_id}), 202
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-"""Verilex AI branded PDF report generator.
+"""Valorex AI branded PDF report generator.
 
-Matches the Verilex UI mockup:
+Matches the Valorex UI mockup:
   - White background, logo in page header
   - Numbered section headings (no dark bars)
   - Left-bordered risk cards with light tinted backgrounds
@@ -101,7 +101,7 @@ class _Canvas(pdf_canvas.Canvas):
             self.drawString(MARGIN, PAGE_H - 10 * mm, "V")
             self.setFillColor(NAVY)
             self.setFont("Helvetica-Bold", 12)
-            self.drawString(MARGIN + 8 * mm, PAGE_H - 10 * mm, "VERILEX")
+            self.drawString(MARGIN + 8 * mm, PAGE_H - 10 * mm, "VALOREX")
             self.setFillColor(GREY_MID)
             self.setFont("Helvetica", 6.5)
             self.drawString(MARGIN + 8 * mm, PAGE_H - 15 * mm, "ADVANCED LEGAL INTELLIGENCE")
@@ -112,7 +112,7 @@ class _Canvas(pdf_canvas.Canvas):
         self.setFont("Helvetica", 7.5)
         self.setFillColor(GREY_MID)
         self.drawRightString(PAGE_W - MARGIN, PAGE_H - 10 * mm,
-                             "CONFIDENTIAL  |  VERILEX AI AUDIT")
+                             "CONFIDENTIAL  |  VALOREX AI AUDIT")
         self.drawRightString(PAGE_W - MARGIN, PAGE_H - 15 * mm, self._date)
         # bottom rule
         self.setStrokeColor(BORDER_GREY)
@@ -264,13 +264,13 @@ def _step_header(n, title: str, st: dict) -> Table:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def generate_pdf_report(analysis: dict, logo_path: str | None = None) -> bytes:
-    """Return Verilex-branded PDF bytes for *analysis*."""
+    """Return Valorex-branded PDF bytes for *analysis*."""
 
     # auto-discover logo next to this script
     if logo_path is None:
         here = os.path.dirname(os.path.abspath(__file__))
-        for name in ("verilex_logo.png", "verilex_logo.jpg",
-                     "verilex_logo.jpeg", "logo.png", "logo.jpg"):
+        for name in ("valorex_logo.png", "valorex_logo.jpg",
+                     "valorex_logo.jpeg", "logo.png", "logo.jpg"):
             candidate = os.path.join(here, name)
             if os.path.isfile(candidate):
                 logo_path = candidate
@@ -281,8 +281,8 @@ def generate_pdf_report(analysis: dict, logo_path: str | None = None) -> bytes:
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=HEADER_H + 6 * mm, bottomMargin=FOOTER_H + 6 * mm,
-        title="Verilex AI Legal Audit",
-        author="Verilex AI",
+        title="Valorex AI Legal Audit",
+        author="Valorex AI",
         subject=analysis.get("document_title", "Legal Document"),
     )
 
@@ -439,6 +439,6 @@ def generate_pdf_report(analysis: dict, logo_path: str | None = None) -> bytes:
     def _make_canvas(*args, **kwargs):
         return _Canvas(*args, logo_path=logo_path, **kwargs)
 
-    logger.info("Building Verilex PDF  job=%s", analysis.get("job_id"))
+    logger.info("Building Valorex PDF  job=%s", analysis.get("job_id"))
     doc.build(story, canvasmaker=_make_canvas)
     return buf.getvalue()
