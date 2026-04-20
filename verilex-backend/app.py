@@ -120,6 +120,8 @@ def _process_and_callback(pdf_url: str, job_id: str, webhook_url: str):
             "status": "success",
             "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8"),
             "filename": f"valorex-audit-{job_id}.pdf",
+            "overall_risk_level": analysis.get("overall_risk_level", ""),
+            "document_type": analysis.get("document_type", ""),
             "tokens": token_usage,
         }
     except Exception as exc:
