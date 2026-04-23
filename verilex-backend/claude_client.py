@@ -156,6 +156,29 @@ class ValorexClient:
 
     # ── public methods ────────────────────────────────────────────────────────
 
+    def is_legal_document(self, text: str, page_count: int) -> tuple[bool, str]:
+        """Return (is_legal, reason). Uses only the first 3000 chars for speed."""
+        prompt = f"""Classify whether the following document is a legal document suitable for legal analysis.
+
+Legal documents include: contracts, agreements, leases, NDAs, franchise agreements, terms and conditions,
+employment contracts, service agreements, partnership agreements, shareholder agreements, court documents,
+legal notices, deeds, wills, powers of attorney, or any formal legal instrument.
+
+NOT legal documents: invoices, receipts, marketing materials, resumes, articles, books, academic papers,
+financial statements without legal clauses, technical manuals, images, or unreadable content.
+
+Document info: {page_count} pages
+Document text (first 3000 chars):
+{text[:3000]}
+
+Reply with ONLY this JSON, no other text:
+{{"is_legal": true or false, "reason": "one sentence explanation"}}"""
+
+        logger.info("Classifying document as legal/non-legal")
+        raw, _ = self._call_claude(prompt, max_tokens=150)
+        result = _parse_json_response(raw)
+        return bool(result.get("is_legal", True)), result.get("reason", "")
+
     def extract_document_structure(self, text: str, page_count: int) -> list:
         """Return an ordered JSON array of typed document elements."""
         prompt = f"""The following is the full text of a legal document ({page_count} pages).

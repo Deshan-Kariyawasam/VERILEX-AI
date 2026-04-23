@@ -58,10 +58,11 @@ def _sev(s: str):
 
 # ── Per-page chrome canvas ────────────────────────────────────────────────────
 class _Canvas(pdf_canvas.Canvas):
-    def __init__(self, *args, logo_path=None, **kwargs):
+    def __init__(self, *args, logo_path=None, displaying_id=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved: list[dict] = []
         self._logo = logo_path
+        self._displaying_id = displaying_id or ""
         self._date = datetime.now().strftime("%Y-%m-%d")
 
     def showPage(self):
@@ -114,6 +115,9 @@ class _Canvas(pdf_canvas.Canvas):
         self.drawRightString(PAGE_W - MARGIN, PAGE_H - 10 * mm,
                              "CONFIDENTIAL  |  VALOREX AI AUDIT")
         self.drawRightString(PAGE_W - MARGIN, PAGE_H - 15 * mm, self._date)
+        if self._displaying_id:
+            self.setFont("Helvetica", 7)
+            self.drawRightString(PAGE_W - MARGIN, PAGE_H - 19 * mm, self._displaying_id)
         # bottom rule
         self.setStrokeColor(BORDER_GREY)
         self.setLineWidth(0.5)
@@ -263,7 +267,7 @@ def _step_header(n, title: str, st: dict) -> Table:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def generate_pdf_report(analysis: dict, logo_path: str | None = None) -> bytes:
+def generate_pdf_report(analysis: dict, logo_path: str | None = None, displaying_id: str | None = None) -> bytes:
     """Return Valorex-branded PDF bytes for *analysis*."""
 
     # auto-discover logo next to this script
@@ -437,7 +441,7 @@ def generate_pdf_report(analysis: dict, logo_path: str | None = None) -> bytes:
 
     # ── Build ─────────────────────────────────────────────────────────────────
     def _make_canvas(*args, **kwargs):
-        return _Canvas(*args, logo_path=logo_path, **kwargs)
+        return _Canvas(*args, logo_path=logo_path, displaying_id=displaying_id, **kwargs)
 
     logger.info("Building Valorex PDF  job=%s", analysis.get("job_id"))
     doc.build(story, canvasmaker=_make_canvas)

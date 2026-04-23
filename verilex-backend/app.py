@@ -28,6 +28,8 @@ CORS(
 
 valorex = ValorexClient()
 
+ERROR_WEBHOOK_URL = "https://verilex-45893.bubbleapps.io/version-test/api/1.1/wf/pdf_error"
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -107,13 +109,30 @@ def analyze_document():
         return jsonify({"error": str(exc), "job_id": job_id}), 500
 
 
-def _process_and_callback(pdf_url: str, job_id: str, webhook_url: str):
+def _post_error(job_id: str, message: str):
+    try:
+        requests.post(ERROR_WEBHOOK_URL, json={"job_id": job_id, "error": message}, timeout=30)
+        logger.info("Error webhook delivered job=%s", job_id)
+    except Exception as exc:
+        logger.error("Error webhook delivery failed job=%s: %s", job_id, exc)
+
+
+def _process_and_callback(pdf_url: str, job_id: str, webhook_url: str, displaying_id: str = ""):
     try:
         pdf_data = download_and_extract_pdf(pdf_url)
+
+        is_legal, reason = valorex.is_legal_document(
+            pdf_data["full_text"], pdf_data["page_count"]
+        )
+        if not is_legal:
+            logger.warning("Non-legal document rejected job=%s reason=%s", job_id, reason)
+            _post_error(job_id, f"The uploaded document does not appear to be a legal document. {reason}")
+            return
+
         analysis = valorex.analyze_document(
             pdf_data["full_text"], pdf_data["page_count"], job_id
         )
-        pdf_bytes = generate_pdf_report(analysis)
+        pdf_bytes = generate_pdf_report(analysis, displaying_id=displaying_id)
         token_usage = analysis.pop("_token_usage", {})
         payload = {
             "job_id": job_id,
@@ -126,7 +145,8 @@ def _process_and_callback(pdf_url: str, job_id: str, webhook_url: str):
         }
     except Exception as exc:
         logger.exception("Background processing failed job=%s", job_id)
-        payload = {"job_id": job_id, "status": "error", "error": str(exc)}
+        _post_error(job_id, str(exc))
+        return
 
     try:
         requests.post(webhook_url, json=payload, timeout=30)
@@ -150,9 +170,12 @@ def generate_pdf():
     if not webhook_url:
         return jsonify({"error": "webhook_url is required", "job_id": job_id}), 400
 
+    displaying_id = data.get("displaying_id", "").strip()
+    logger.info("generate-pdf job=%s displaying_id=%r", job_id, displaying_id)
+
     threading.Thread(
         target=_process_and_callback,
-        args=(pdf_url, job_id, webhook_url),
+        args=(pdf_url, job_id, webhook_url, displaying_id),
         daemon=True,
     ).start()
 
